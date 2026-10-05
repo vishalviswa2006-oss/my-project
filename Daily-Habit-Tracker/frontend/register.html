@@ -1,0 +1,51 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register | Daily Habit Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body class="auth-page">
+    <div class="auth-card card">
+      <div class="auth-header">
+        <div class="brand-mark">D</div>
+        <div>
+          <p class="eyebrow">Start your journey</p>
+          <h1>Create account</h1>
+        </div>
+      </div>
+
+      <form id="registerForm" class="auth-form">
+        <label>
+          <span>Full name</span>
+          <input id="registerName" type="text" name="name" placeholder="John Doe" required />
+        </label>
+
+        <label>
+          <span>Email</span>
+          <input id="registerEmail" type="email" name="email" placeholder="you@example.com" required />
+        </label>
+
+        <label>
+          <span>Password</span>
+          <input id="registerPassword" type="password" name="password" placeholder="Create a strong password" required minlength="6" />
+        </label>
+
+        <button type="submit" class="primary-btn full-width">Create account</button>
+      </form>
+
+      <p class="auth-switch">
+        Already have an account?
+        <a href="/login.html">Login</a>
+      </p>
+      <div id="authMessage" class="message-box hidden"></div>
+    </div>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/script.js"></script>
+  </body>
+</html>

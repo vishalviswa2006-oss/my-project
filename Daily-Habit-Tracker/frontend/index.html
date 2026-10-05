@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Daily Habit Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body class="dashboard-page">
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <div class="brand-mark">D</div>
+          <div>
+            <p class="eyebrow">Student wellness</p>
+            <h1>Daily Habit Tracker</h1>
+          </div>
+        </div>
+        <button id="logoutBtn" class="ghost-btn" type="button">Logout</button>
+      </header>
+
+      <main class="dashboard-layout" id="dashboardApp">
+        <aside class="sidebar card">
+          <div class="profile-card">
+            <div class="avatar" id="userInitials">U</div>
+            <div>
+              <p class="small-label">Profile</p>
+              <h2 id="userName">Loading...</h2>
+            </div>
+          </div>
+
+          <div class="profile-details">
+            <div>
+              <span class="label">Email</span>
+              <p id="userEmail">-</p>
+            </div>
+            <div>
+              <span class="label">Member since</span>
+              <p id="memberSince">-</p>
+            </div>
+          </div>
+
+          <div class="tip-box">
+            <p class="small-label">Motivational tip</p>
+            <p id="motivationalTip">Loading tip...</p>
+          </div>
+        </aside>
+
+        <section class="main-panel">
+          <div class="stats-grid">
+            <article class="stat-card card accent-green">
+              <div>
+                <p class="small-label">Today</p>
+                <h3 id="todayProgressValue">0%</h3>
+              </div>
+              <span class="chip" id="todayProgressText">0 / 0 done</span>
+            </article>
+
+            <article class="stat-card card accent-blue">
+              <div>
+                <p class="small-label">Current streak</p>
+                <h3 id="streakValue">0 days</h3>
+              </div>
+              <span class="chip">Consistency</span>
+            </article>
+
+            <article class="stat-card card accent-purple">
+              <div>
+                <p class="small-label">Total habits</p>
+                <h3 id="totalHabitsValue">0</h3>
+              </div>
+              <span class="chip">Active list</span>
+            </article>
+
+            <article class="stat-card card accent-orange">
+              <div>
+                <p class="small-label">Completed</p>
+                <h3 id="completedHabitsValue">0</h3>
+              </div>
+              <span class="chip" id="completedLabel">Overall</span>
+            </article>
+          </div>
+
+          <div class="panel-card card habit-panel">
+            <div class="panel-header">
+              <div>
+                <p class="small-label">Habits</p>
+                <h2>Your routine</h2>
+              </div>
+            </div>
+
+            <form id="habitForm" class="habit-form">
+              <input id="habitInput" type="text" maxlength="80" placeholder="Add a new habit..." required />
+              <button type="submit" class="primary-btn">Add habit</button>
+              <button type="button" id="cancelEditBtn" class="secondary-btn hidden">Cancel</button>
+            </form>
+
+            <div id="habitList" class="habit-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/dashboard.js"></script>
+    <script src="/js/script.js"></script>
+  </body>
+</html>
