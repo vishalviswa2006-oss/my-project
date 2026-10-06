@@ -3,155 +3,124 @@ const pool = require('../db');
 const { authenticate } = require('../middleware');
 
 const router = express.Router();
+const frequencies = new Set(['daily', 'weekdays', 'weekly']);
 
-const getTodayString = () => new Date().toISOString().slice(0, 10);
+router.use(authenticate);
 
-const getCurrentStreak = (completedDates) => {
-  if (!completedDates || completedDates.length === 0) return 0;
-
-  const dateSet = new Set(completedDates.map((date) => date.toISOString ? date.toISOString().slice(0, 10) : String(date).slice(0, 10)));
-  let streak = 0;
-  let cursor = new Date();
-
-  if (!dateSet.has(cursor.toISOString().slice(0, 10))) {
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  while (dateSet.has(cursor.toISOString().slice(0, 10))) {
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  return streak;
-};
-
-router.get('/summary', authenticate, async (req, res) => {
-  const userId = req.user.userId;
-  const today = getTodayString();
-
-  try {
-    const [totalRows] = await pool.execute('SELECT COUNT(*) AS total FROM habits WHERE user_id = ?', [userId]);
-    const [completedRows] = await pool.execute(
-      `SELECT COUNT(*) AS total
-       FROM habit_logs hl
-       INNER JOIN habits h ON h.id = hl.habit_id
-       WHERE h.user_id = ? AND hl.completed_date = ? AND hl.completed = 1`,
-      [userId, today]
-    );
-
-    const [daysRows] = await pool.execute(
-      `SELECT DISTINCT DATE(hl.completed_date) AS completed_day
-       FROM habit_logs hl
-       INNER JOIN habits h ON h.id = hl.habit_id
-       WHERE h.user_id = ? AND hl.completed = 1
-       ORDER BY completed_day DESC`,
-      [userId]
-    );
-
-    const completedDates = daysRows.map((row) => new Date(`${row.completed_day}T00:00:00`));
-    const streak = getCurrentStreak(completedDates);
-    const totalHabits = Number(totalRows[0].total || 0);
-    const completedToday = Number(completedRows[0].total || 0);
-    const totalCompleted = completedDates.length;
-    const progress = totalHabits > 0 ? Math.round((completedToday / totalHabits) * 100) : 0;
-
-    return res.json({
-      totalHabits,
-      completedToday,
-      totalCompleted,
-      streak,
-      progress,
-      today: today
-    });
-  } catch (error) {
-    console.error('Habit summary error:', error);
-    return res.status(500).json({ message: 'Unable to load habit summary.' });
-  }
-});
-
-router.get('/', authenticate, async (req, res) => {
-  const userId = req.user.userId;
-  const today = getTodayString();
-
+router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      `SELECT h.id, h.habit_name, h.created_at,
-              MAX(CASE WHEN hl.completed_date = ? AND hl.completed = 1 THEN 1 ELSE 0 END) AS is_completed_today,
-              COUNT(hl.id) AS total_completions
+      `SELECT h.id, h.name, h.description, h.category, h.frequency, h.created_at,
+              COALESCE(SUM(CASE WHEN hl.completed = 1 THEN 1 ELSE 0 END), 0) AS total_completions,
+              COALESCE(MAX(CASE WHEN hl.completed_date = CURDATE() AND hl.completed = 1 THEN 1 ELSE 0 END), 0) AS is_completed_today,
+              COALESCE(MAX(CASE
+                WHEN hl.completed_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+                 AND hl.completed = 1 THEN 1 ELSE 0 END), 0) AS is_completed_this_week,
+              CASE
+                WHEN h.frequency = 'daily' THEN 1
+                WHEN h.frequency = 'weekdays' AND DAYOFWEEK(CURDATE()) BETWEEN 2 AND 6 THEN 1
+                WHEN h.frequency = 'weekly' AND COALESCE(SUM(
+                  CASE WHEN hl.completed_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+                       AND hl.completed = 1 THEN 1 ELSE 0 END
+                ), 0) = 0 THEN 1
+                ELSE 0
+              END AS is_due_today
        FROM habits h
-       LEFT JOIN habit_logs hl ON hl.habit_id = h.id
+       LEFT JOIN habit_logs hl ON hl.habit_id = h.id AND hl.user_id = h.user_id
        WHERE h.user_id = ?
-       GROUP BY h.id, h.habit_name, h.created_at
-       ORDER BY h.created_at DESC`,
-      [today, userId]
+       GROUP BY h.id, h.name, h.description, h.category, h.frequency, h.created_at
+       ORDER BY h.created_at DESC, h.id DESC`,
+      [req.user.userId]
     );
-
-    const habits = rows.map((habit) => ({
-      id: habit.id,
-      name: habit.habit_name,
-      createdAt: habit.created_at,
-      isCompletedToday: Number(habit.is_completed_today) === 1,
-      totalCompletions: Number(habit.total_completions || 0)
-    }));
-
-    return res.json({ habits });
+    return res.json({
+      habits: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        category: row.category,
+        frequency: row.frequency,
+        createdAt: row.created_at,
+        totalCompletions: Number(row.total_completions),
+        isCompletedToday: Boolean(row.is_completed_today),
+        isCompletedThisWeek: Boolean(row.is_completed_this_week),
+        isDueToday: Boolean(row.is_due_today)
+      }))
+    });
   } catch (error) {
     console.error('Get habits error:', error);
     return res.status(500).json({ message: 'Unable to load habits.' });
   }
 });
 
-router.post('/', authenticate, async (req, res) => {
-  const { habitName } = req.body;
-  const userId = req.user.userId;
-
-  if (!habitName || !habitName.trim()) {
-    return res.status(400).json({ message: 'Habit name is required.' });
+router.post('/', async (req, res) => {
+  const { name, description = '', category = 'Personal', frequency = 'daily' } = req.body;
+  if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
+    return res.status(400).json({ message: 'Habit name must be between 1 and 100 characters.' });
+  }
+  if (typeof description !== 'string' || description.length > 500) {
+    return res.status(400).json({ message: 'Description must be 500 characters or fewer.' });
+  }
+  if (typeof category !== 'string' || !category.trim() || category.trim().length > 50) {
+    return res.status(400).json({ message: 'Category must be between 1 and 50 characters.' });
+  }
+  if (!frequencies.has(frequency)) {
+    return res.status(400).json({ message: 'Frequency must be daily, weekdays, or weekly.' });
   }
 
   try {
     const [result] = await pool.execute(
-      'INSERT INTO habits (user_id, habit_name) VALUES (?, ?)',
-      [userId, habitName.trim()]
+      'INSERT INTO habits (user_id, name, description, category, frequency) VALUES (?, ?, ?, ?, ?)',
+      [req.user.userId, name.trim(), description.trim(), category.trim(), frequency]
     );
-
-    const [rows] = await pool.execute('SELECT id, habit_name, created_at FROM habits WHERE id = ?', [result.insertId]);
+    const [rows] = await pool.execute(
+      'SELECT id, name, description, category, frequency, created_at FROM habits WHERE id = ? AND user_id = ?',
+      [result.insertId, req.user.userId]
+    );
     const habit = rows[0];
-
     return res.status(201).json({
-      message: 'Habit added successfully.',
       habit: {
         id: habit.id,
-        name: habit.habit_name,
+        name: habit.name,
+        description: habit.description,
+        category: habit.category,
+        frequency: habit.frequency,
         createdAt: habit.created_at,
-        isCompletedToday: false,
-        totalCompletions: 0
+        totalCompletions: 0,
+        isCompletedToday: false
       }
     });
   } catch (error) {
     console.error('Create habit error:', error);
-    return res.status(500).json({ message: 'Unable to add habit.' });
+    return res.status(500).json({ message: 'Unable to create habit.' });
   }
 });
 
-router.put('/:id', authenticate, async (req, res) => {
-  const { id } = req.params;
-  const { habitName } = req.body;
-  const userId = req.user.userId;
-
-  if (!habitName || !habitName.trim()) {
-    return res.status(400).json({ message: 'Habit name is required.' });
+router.put('/:id', async (req, res) => {
+  const { name, description = '', category = 'Personal', frequency = 'daily' } = req.body;
+  if (!/^\d+$/.test(req.params.id)) {
+    return res.status(400).json({ message: 'Invalid habit ID.' });
+  }
+  if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
+    return res.status(400).json({ message: 'Habit name must be between 1 and 100 characters.' });
+  }
+  if (typeof description !== 'string' || description.length > 500) {
+    return res.status(400).json({ message: 'Description must be 500 characters or fewer.' });
+  }
+  if (typeof category !== 'string' || !category.trim() || category.trim().length > 50) {
+    return res.status(400).json({ message: 'Category must be between 1 and 50 characters.' });
+  }
+  if (!frequencies.has(frequency)) {
+    return res.status(400).json({ message: 'Frequency must be daily, weekdays, or weekly.' });
   }
 
   try {
-    const [rows] = await pool.execute('SELECT id FROM habits WHERE id = ? AND user_id = ?', [id, userId]);
-
-    if (rows.length === 0) {
+    const [result] = await pool.execute(
+      'UPDATE habits SET name = ?, description = ?, category = ?, frequency = ? WHERE id = ? AND user_id = ?',
+      [name.trim(), description.trim(), category.trim(), frequency, req.params.id, req.user.userId]
+    );
+    if (!result.affectedRows) {
       return res.status(404).json({ message: 'Habit not found.' });
     }
-
-    await pool.execute('UPDATE habits SET habit_name = ? WHERE id = ?', [habitName.trim(), id]);
-
     return res.json({ message: 'Habit updated successfully.' });
   } catch (error) {
     console.error('Update habit error:', error);
@@ -159,65 +128,22 @@ router.put('/:id', authenticate, async (req, res) => {
   }
 });
 
-router.delete('/:id', authenticate, async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.userId;
-
+router.delete('/:id', async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) {
+    return res.status(400).json({ message: 'Invalid habit ID.' });
+  }
   try {
-    const [rows] = await pool.execute('SELECT id FROM habits WHERE id = ? AND user_id = ?', [id, userId]);
-
-    if (rows.length === 0) {
+    const [result] = await pool.execute(
+      'DELETE FROM habits WHERE id = ? AND user_id = ?',
+      [req.params.id, req.user.userId]
+    );
+    if (!result.affectedRows) {
       return res.status(404).json({ message: 'Habit not found.' });
     }
-
-    await pool.execute('DELETE FROM habits WHERE id = ?', [id]);
     return res.json({ message: 'Habit deleted successfully.' });
   } catch (error) {
     console.error('Delete habit error:', error);
     return res.status(500).json({ message: 'Unable to delete habit.' });
-  }
-});
-
-router.post('/:id/toggle', authenticate, async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.userId;
-  const today = getTodayString();
-
-  try {
-    const [habitRows] = await pool.execute('SELECT id FROM habits WHERE id = ? AND user_id = ?', [id, userId]);
-
-    if (habitRows.length === 0) {
-      return res.status(404).json({ message: 'Habit not found.' });
-    }
-
-    const [logRows] = await pool.execute(
-      'SELECT id, completed FROM habit_logs WHERE habit_id = ? AND completed_date = ?',
-      [id, today]
-    );
-
-    if (logRows.length === 0) {
-      const [insertResult] = await pool.execute(
-        'INSERT INTO habit_logs (habit_id, completed_date, completed) VALUES (?, ?, 1)',
-        [id, today]
-      );
-
-      return res.status(201).json({
-        message: 'Habit marked as completed.',
-        isCompletedToday: true,
-        logId: insertResult.insertId
-      });
-    }
-
-    const nextCompleted = logRows[0].completed === 1 ? 0 : 1;
-    await pool.execute('UPDATE habit_logs SET completed = ? WHERE id = ?', [nextCompleted, logRows[0].id]);
-
-    return res.json({
-      message: nextCompleted ? 'Habit marked as completed.' : 'Habit unmarked for today.',
-      isCompletedToday: Boolean(nextCompleted)
-    });
-  } catch (error) {
-    console.error('Toggle habit error:', error);
-    return res.status(500).json({ message: 'Unable to update habit status.' });
   }
 });
 

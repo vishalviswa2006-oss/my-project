@@ -7,13 +7,16 @@ const { authenticate } = require('../middleware');
 const router = express.Router();
 
 const createToken = (user) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET must be configured.');
+  }
   return jwt.sign(
     {
       userId: user.id,
       email: user.email,
       name: user.name
     },
-    process.env.JWT_SECRET || 'daily-habit-tracker-secret-key',
+    process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
 };
@@ -21,16 +24,19 @@ const createToken = (user) => {
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
 
-  if (!name || !email || !password) {
+  if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string' || !name.trim() || !email.trim() || !password) {
     return res.status(400).json({ message: 'Name, email, and password are required.' });
   }
 
-  if (password.length < 6) {
-    return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
+  if (name.trim().length > 100 || email.trim().length > 255 || password.length < 8) {
+    return res.status(400).json({ message: 'Use a name up to 100 characters, a valid email, and a password of at least 8 characters.' });
   }
 
   try {
     const trimmedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return res.status(400).json({ message: 'Enter a valid email address.' });
+    }
     const [existingUser] = await pool.execute('SELECT id FROM users WHERE email = ?', [trimmedEmail]);
 
     if (existingUser.length > 0) {
@@ -41,7 +47,7 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, salt);
 
     const [result] = await pool.execute(
-      'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
+      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
       [name.trim(), trimmedEmail, passwordHash]
     );
 
@@ -59,6 +65,9 @@ router.post('/register', async (req, res) => {
       user
     });
   } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'An account with this email already exists.' });
+    }
     console.error('Register error:', error);
     return res.status(500).json({ message: 'Unable to register account.' });
   }
@@ -67,20 +76,20 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
+  if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
   try {
     const trimmedEmail = email.trim().toLowerCase();
-    const [rows] = await pool.execute('SELECT * FROM users WHERE email = ?', [trimmedEmail]);
+    const [rows] = await pool.execute('SELECT id, name, email, password FROM users WHERE email = ?', [trimmedEmail]);
 
     if (rows.length === 0) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
     const user = rows[0];
-    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+    const passwordMatches = await bcrypt.compare(password, user.password);
 
     if (!passwordMatches) {
       return res.status(401).json({ message: 'Invalid email or password.' });

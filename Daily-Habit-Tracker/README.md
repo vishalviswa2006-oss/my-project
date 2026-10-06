@@ -1,56 +1,64 @@
-# Daily Habit Tracker
+# Daily Habits Tracker
 
-A beginner-friendly habit tracking web app built with Node.js, Express, MySQL, HTML, CSS, and vanilla JavaScript.
+A full-stack daily habit tracker with a React/Vite frontend, Express API, and MySQL persistence.
 
-## Features
+## Requirements
 
-- User registration and login
-- JWT-based authentication
-- Protected habit dashboard
-- Add, edit, delete, and toggle habits
-- Daily completion tracking with MySQL
-- Current streak and progress statistics
-- User-specific habits so one user cannot see another user's data
-- Responsive modern UI
+- Node.js 18.18 or newer and npm
+- MySQL 8.0 or newer
 
-## Project structure
+## MySQL setup
 
-- `backend/` – Express API, database config, and MySQL scripts
-- `frontend/` – login page, registration page, dashboard, CSS, and client-side JavaScript
+From the project root, create the database and tables with a MySQL account allowed to create databases:
 
-## Setup
+```sh
+mysql -u root -p < backend/database.sql
+```
 
-1. Start MySQL and create a database user if needed.
-2. Open the MySQL client and run the SQL in `backend/database.sql`.
-3. Update `backend/.env` with your local database settings.
-4. Open a terminal in `backend`.
-5. Install dependencies:
+Create `backend/.env` from `backend/.env.example` and set the credentials for your MySQL installation, including `DB_NAME=daily_habits_tracker`. If `backend/.env` already exists, update it to use the new database and a MySQL account with access to it. Set `JWT_SECRET` to a long, random value. Do not commit `.env`.
 
-   npm install
+## Start the backend
 
-6. Start the app:
+```sh
+cd backend
+npm install
+npm start
+```
 
-   npm start
+The API listens on `http://localhost:5000`. Check its MySQL connection at `http://localhost:5000/api/health`.
 
-7. Visit:
+## Start the frontend
 
-   http://localhost:5000
+In another terminal:
 
-## Default environment file
+```sh
+cd frontend
+npm install
+npm run dev
+```
 
-The project includes `backend/.env.example` and a local `.env` file:
+Open `http://localhost:5173`. The frontend sends API requests to `http://localhost:5000/api`.
 
-- `PORT=5000`
-- `DB_HOST=localhost`
-- `DB_USER=root`
-- `DB_PASSWORD=`
-- `DB_NAME=daily_habit_tracker`
-- `JWT_SECRET=daily-habit-tracker-secret-key`
+## Available features
 
-Update the database credentials to match your MySQL setup if needed.
+- Register and sign in with bcrypt-hashed passwords and JWT-protected routes.
+- Create, edit, delete, categorize, schedule, and complete habits.
+- View today's schedule, daily completion, current and longest streaks, and a seven-day progress chart.
+- Edit account details and optionally change the password.
+- Responsive dashboard, habit list, progress, profile, login, and registration pages.
 
-## Notes
+Private API requests use `Authorization: Bearer <token>`. The database setup script creates `daily_habits_tracker` and its users, habits, and habit_logs tables.
 
-- The backend serves the frontend from the same Express server.
-- No separate frontend server is required.
-- All habit data is stored in MySQL.
+## API routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | `/api/health` | Public |
+| POST | `/api/auth/register` | Public |
+| POST | `/api/auth/login` | Public |
+| GET | `/api/auth/me` | JWT |
+| GET, POST | `/api/habits` | JWT |
+| PUT, DELETE | `/api/habits/:id` | JWT |
+| POST | `/api/progress/:habitId/toggle` | JWT |
+| GET | `/api/progress/stats` | JWT |
+| GET, PUT | `/api/user/profile` | JWT |
